@@ -22,7 +22,10 @@ from typing import Any, Iterable, Iterator
 
 from .db import Application, Event
 
-BASE_URL = "https://api.uspto.gov/api/v1/patent/applications/search"
+API_ROOT = "https://api.uspto.gov/api/v1"
+BASE_URL = f"{API_ROOT}/patent/applications/search"
+# Scanned patent and pre-grant publication PDFs; public, no key needed.
+PATENT_PDF_URL = "https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/{number}"
 PAGE_SIZE = 100
 
 
@@ -79,8 +82,8 @@ class Client:
         self.pause = pause
         self.retries = retries
 
-    def _get(self, params: dict[str, Any]) -> dict[str, Any]:
-        url = f"{self.base_url}?{urllib.parse.urlencode(params)}"
+    def _get(self, params: dict[str, Any], url: str | None = None) -> dict[str, Any]:
+        url = f"{url or self.base_url}?{urllib.parse.urlencode(params)}" if params else (url or self.base_url)
         req = urllib.request.Request(url, headers={"X-API-KEY": self.api_key, "Accept": "application/json"})
         delay = 2.0
         for attempt in range(self.retries + 1):
@@ -124,8 +127,44 @@ class Client:
     def by_examiner(self, name: str, limit: int | None = None) -> Iterator[Application]:
         return self.search(f'applicationMetaData.examinerNameText:"{name}"', limit)
 
+    # -- single-application endpoints ------------------------------------- #
+
+    def application_raw(self, app_no: str) -> dict[str, Any] | None:
+        data = self._get({}, f"{API_ROOT}/patent/applications/{app_no}")
+        bag = data.get("patentFileWrapperDataBag") or []
+        return bag[0] if bag else None
+
+    def find_raw(self, field: str, value: str) -> dict[str, Any] | None:
+        data = self._get({"q": f'applicationMetaData.{field}:"{value}"', "limit": 1})
+        bag = data.get("patentFileWrapperDataBag") or []
+        return bag[0] if bag else None
+
+    def documents(self, app_no: str) -> list[dict[str, Any]]:
+        data = self._get({}, f"{API_ROOT}/patent/applications/{app_no}/documents")
+        return data.get("documentBag") or []
+
+    def assignments(self, app_no: str) -> list[dict[str, Any]]:
+        data = self._get({}, f"{API_ROOT}/patent/applications/{app_no}/assignment")
+        bag = data.get("patentFileWrapperDataBag") or []
+        return (bag[0].get("assignmentBag") or []) if bag else []
+
+    def download(self, url: str) -> bytes:
+        """Fetch a document download URL taken from a ``documentBag`` entry."""
+        req = urllib.request.Request(url, headers={"X-API-KEY": self.api_key})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return resp.read()
+
     def by_art_unit(self, art_unit: str, limit: int | None = None) -> Iterator[Application]:
         return self.search(f"applicationMetaData.groupArtUnitNumber:{art_unit}", limit)
+
+
+def fetch_patent_pdf(number: str) -> bytes:
+    """Download the scanned PDF of a granted patent or pre-grant publication."""
+    req = urllib.request.Request(PATENT_PDF_URL.format(number=number), headers={"User-Agent": "bumper/0.1"})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        if "pdf" not in (resp.headers.get("Content-Type") or ""):
+            raise ApiError(f"no PDF available for {number}")
+        return resp.read()
 
 
 def read_bulk(paths: Iterable[Path]) -> Iterator[Application]:
