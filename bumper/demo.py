@@ -26,14 +26,14 @@ EV = {
     "allow": ("MN/=.", "Mail Notice of Allowance"),
     "rce": ("RCEX", "Request for Continued Examination (RCE)"),
     "afr": ("A.NE", "Amendment after Final Rejection"),
-    "afcp": ("AFCP", "After Final Consideration Pilot Program Request"),
+    "afcp": ("RAFC", "PILOT- Request for After Final Consideration Program"),
     "noa": ("N/AP", "Notice of Appeal Filed"),
     "brief": ("AP.B", "Appeal Brief Filed"),
-    "answer": ("MEXAN", "Mail Examiner's Answer"),
+    "answer": ("APEA", "Examiner's Answer to Appeal Brief"),
     "affirmed": ("APDA", "BPAI Decision - Examiner Affirmed"),
     "reversed": ("APDR", "BPAI Decision - Examiner Reversed"),
-    "ex_iv": ("EXIN", "Examiner Interview Summary Record (PTOL - 413)"),
-    "app_iv": ("ITRQ", "Applicant Initiated Interview Request"),
+    "ex_iv": ("EXIN", "Interview Summary Record"),
+    "app_iv": ("EXIA", "Interview Summary- Applicant Initiated"),
     "abn": ("ABN2", "Abandonment for Failure to Respond to Office Action"),
 }
 
@@ -179,8 +179,8 @@ def generate_documents(apps: list[Application], seed: int = 7, per_app: float = 
     rng = random.Random(seed)
     firms = [("Example IP Group LLP", "40001"), ("Sample & Partners", "40002"), ("Placeholder Law PC", "40003")]
     attorneys = [("Jordan Q. Example", 61234), ("Riley T. Sample", 70511), ("Casey M. Placeholder", 58890)]
-    out_codes = {"CTNF": "CTNF", "CTFR": "CTFR", "CTRS": "CTRS", "MN/=.": "NOA", "MEXAN": "APEA"}
-    in_codes = {"RCEX": "RCEX", "A.NE": "A.NE", "AFCP": "A.NE", "AP.B": "AP.B", "N/AP": "N/AP"}
+    out_codes = {"CTNF": "CTNF", "CTFR": "CTFR", "CTRS": "CTRS", "MN/=.": "NOA", "APEA": "APEA"}
+    in_codes = {"RCEX": "RCEX", "A.NE": "A.NE", "RAFC": "A.NE", "AP.B": "AP.B", "N/AP": "N/AP"}
     docs, history = [], []
     for app in apps:
         if rng.random() > per_app:

@@ -173,10 +173,40 @@ the transaction list. Endpoints: `/PatPubApp/GetPtoPdf`,
 | Assignments | ODP assignment endpoint |
 | Patent family (new) | EPO OPS INPADOC family |
 
-## 8. Open questions
+## 8. Validation against live USPTO data
 
-* Whether the time metrics are means or medians. The site does not say; Bumper
-  uses means.
+Checked against the live ODP API on 2026-10-13 for `ALMATRAHI, FARIS S` (189 applications).
+
+* **Data snapshot.** BigPatentData's figures match Bumper's output with the report date set to
+  late 2022, not today. Their "last 3 years" window therefore ends at an older data snapshot.
+* **Comparison** (Bumper with `--as-of 2022-12-15`):
+
+  | Metric | BigPatentData | Bumper |
+  | --- | --- | --- |
+  | Allowance rate | 14% (1/7) | 12.5% (1/8) |
+  | Actions per allowance | 5.0 | 5.0 |
+  | Actions per abandonment | 2.2 | 2.0 |
+  | Months to first action | 18 | 17 |
+  | Months to first allowance | 38 | 38 |
+
+  The remaining gap is one abandoned application with a single action. Leaving it out reproduces
+  1/7 and 2.2 exactly, so their snapshot most likely assigned that case to a different examiner.
+* **Medians.** The month figures are medians, not means (mean months to first action would be 14).
+* **Pre-examination exclusion.** Abandonments with no examiner action, such as express abandonments
+  right after filing, are left out of the allowance rate. Including them gives 1/9 or 1/10.
+* **Current art unit.** BigPatentData shows 3667. Most of this examiner's applications are in 3627,
+  but their recent work is in 3667, so the peer group is the unit of the examiner's most recent action.
+* **Transaction codes.** Every office action appears twice, once as the action and once as its
+  mailing (`CTNF`/`MCTNF`, `CTFR`/`MCTFR`, and so on), so mailing twins are ignored. Several events
+  have descriptions that look like counted actions but are not, for example `N/=.` (allowance data
+  verification), `A.NA`, `CNOA`, `ELC.` and `ABN9`. The confirmed code table is in `bumper/events.py`.
+* **API behaviour.** ODP answers bursts of requests with `403 Forbidden` instead of `429`. The client
+  spaces requests 1.5 s apart (`BUMPER_ODP_INTERVAL`) and retries a 403 with backoff. The "XML"
+  document download is a tar archive holding the office-action XML. Word (`MS_WORD`) and PDF
+  copies are also offered.
+
+## 9. Open questions
+
 * The minimum number of dispositions for an examiner to count in peer ranking.
   Bumper uses 5 (`MIN_DISPOSALS`).
 * How the "art unit" peer group is chosen when an examiner has worked in more
@@ -184,6 +214,5 @@ the transaction list. Endpoints: `/PatPubApp/GetPtoPdf`,
 * The exact USPTO document and transaction-code mappings. The ODP document, assignment and
   PTAB endpoints and field names in `bumper/uspto.py`, `bumper/lookup.py` and `bumper/docindex.py`
   need checking against live responses once an API key is configured.
-* The exact transaction-code mapping. Bumper's mapping in `bumper/events.py`
-  matches on code first and falls back to description text. It should be checked
-  against live ODP data once an API key is configured.
+* Pre-appeal "proceed to board" decisions did not appear in the sample, so that outcome still relies
+  on matching the description text.

@@ -12,6 +12,7 @@ import io
 import re
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import zipfile
 from pathlib import Path
@@ -71,9 +72,29 @@ def pdf_text(data: bytes, ocr: bool = True, max_ocr_pages: int = 60) -> str:
         return _clean("\n\n".join(pages))
 
 
+def tar_text(data: bytes) -> str:
+    """Text of the XML/DOCX members of a tar archive (the ODP "XML" download)."""
+    parts = []
+    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+        for member in tar.getmembers():
+            if not member.isfile():
+                continue
+            fh = tar.extractfile(member)
+            if fh is None:
+                continue
+            name = member.name.lower()
+            if name.endswith(".xml"):
+                parts.append(xml_text(fh.read()))
+            elif name.endswith(".docx"):
+                parts.append(docx_text(fh.read()))
+    return _clean("\n\n".join(p for p in parts if p))
+
+
 def extract(data: bytes, mime: str | None = None, name: str = "") -> str:
     kind = (mime or "").upper()
     lower = name.lower()
+    if data[257:262] == b"ustar":
+        return tar_text(data)
     if "XML" in kind or lower.endswith(".xml"):
         return xml_text(data)
     if "WORD" in kind or "DOCX" in kind or lower.endswith(".docx"):

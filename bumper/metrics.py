@@ -6,7 +6,7 @@ from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
-from statistics import mean
+from statistics import median
 from typing import Callable, Iterable
 
 from .db import Application
@@ -25,8 +25,8 @@ def _ratio(num: float, den: float) -> float | None:
     return num / den if den else None
 
 
-def _avg(values: list[float]) -> float | None:
-    return mean(values) if values else None
+def _median(values: list[float]) -> float | None:
+    return median(values) if values else None
 
 
 @dataclass
@@ -58,6 +58,11 @@ def build_case(app: Application) -> Case:
         disposed_on = allowance or app.grant_date or app.status_date
     elif disp in (Disposition.ABANDONED, Disposition.PREEXAM_ABANDONED):
         disposed_on = app.status_date
+        # Abandoned before the examiner ever acted (e.g. express abandonment
+        # right after filing) says nothing about the examiner: treat it like a
+        # pre-examination abandonment.
+        if disp is Disposition.ABANDONED and not any(k in COUNTED_ACTIONS or k is Kind.ALLOWANCE for _, k in events):
+            disp = Disposition.PREEXAM_ABANDONED
     return Case(app, disp, disposed_on, events)
 
 
@@ -181,8 +186,8 @@ def examiner_report(examiner: str, apps: list[Application], as_of: date | None =
         "allowance_rate": _ratio(len(allowed), len(disposed)),
         "actions_per_allowance": _ratio(sum(len(c.kinds(COUNTED_ACTIONS)) for c in allowed), len(allowed)),
         "actions_per_abandonment": _ratio(sum(len(c.kinds(COUNTED_ACTIONS)) for c in abandoned), len(abandoned)),
-        "months_to_first_action": _avg(first_action),
-        "months_to_first_allowance": _avg(first_allow),
+        "months_to_first_action": _median(first_action),
+        "months_to_first_allowance": _median(first_allow),
     }
 
     decisions = [k for c in cases for d, k in c.events if k in BOARD_DECISIONS and since <= d <= as_of]

@@ -73,38 +73,57 @@ def parse_record(rec: dict[str, Any]) -> Application | None:
 
 
 class Client:
+    """ODP API client.
+
+    ODP throttles bursts of requests and answers them with ``403 Forbidden``
+    (not 429), so requests are spaced at least ``interval`` seconds apart and a
+    403 is retried with backoff before it is treated as a real refusal.
+    """
+
     def __init__(self, api_key: str | None = None, base_url: str = BASE_URL,
-                 pause: float = 0.25, retries: int = 4) -> None:
+                 interval: float | None = None, retries: int = 6) -> None:
         self.api_key = api_key or os.environ.get("USPTO_API_KEY")
         if not self.api_key:
             raise ApiError("USPTO_API_KEY is not set. Get a free key at https://data.uspto.gov/myodp")
         self.base_url = base_url
-        self.pause = pause
+        self.interval = interval if interval is not None else float(os.environ.get("BUMPER_ODP_INTERVAL", "1.5"))
         self.retries = retries
+        self._last = 0.0
 
-    def _get(self, params: dict[str, Any], url: str | None = None) -> dict[str, Any]:
-        url = f"{url or self.base_url}?{urllib.parse.urlencode(params)}" if params else (url or self.base_url)
-        req = urllib.request.Request(url, headers={"X-API-KEY": self.api_key, "Accept": "application/json"})
-        delay = 2.0
+    def _request(self, url: str, accept: str | None = "application/json") -> bytes | None:
+        headers = {"X-API-KEY": self.api_key, "User-Agent": "bumper/0.1"}
+        if accept:
+            headers["Accept"] = accept
+        req = urllib.request.Request(url, headers=headers)
+        delay = 5.0
         for attempt in range(self.retries + 1):
+            wait = self.interval - (time.monotonic() - self._last)
+            if wait > 0:
+                time.sleep(wait)
+            self._last = time.monotonic()
             try:
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    return json.load(resp)
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    return resp.read()
             except urllib.error.HTTPError as e:
                 if e.code == 404:  # ODP answers 404 when a query has no hits
-                    return {}
-                if e.code in (429, 500, 502, 503, 504) and attempt < self.retries:
+                    return None
+                if e.code in (403, 429, 500, 502, 503, 504) and attempt < self.retries:
                     time.sleep(delay)
-                    delay *= 2
+                    delay = min(delay * 2, 120)
                     continue
                 raise ApiError(f"{e.code} {e.reason}: {e.read()[:300]!r}") from e
             except urllib.error.URLError:
                 if attempt < self.retries:
                     time.sleep(delay)
-                    delay *= 2
+                    delay = min(delay * 2, 120)
                     continue
                 raise
         raise ApiError("unreachable")
+
+    def _get(self, params: dict[str, Any], url: str | None = None) -> dict[str, Any]:
+        url = f"{url or self.base_url}?{urllib.parse.urlencode(params)}" if params else (url or self.base_url)
+        body = self._request(url)
+        return json.loads(body) if body else {}
 
     def search(self, query: str, limit: int | None = None) -> Iterator[Application]:
         offset = 0
@@ -122,7 +141,6 @@ class Client:
             offset += len(bag)
             if not bag or offset >= total:
                 return
-            time.sleep(self.pause)
 
     def by_examiner(self, name: str, limit: int | None = None) -> Iterator[Application]:
         return self.search(f'applicationMetaData.examinerNameText:"{name}"', limit)
@@ -150,9 +168,10 @@ class Client:
 
     def download(self, url: str) -> bytes:
         """Fetch a document download URL taken from a ``documentBag`` entry."""
-        req = urllib.request.Request(url, headers={"X-API-KEY": self.api_key})
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            return resp.read()
+        body = self._request(url, accept=None)
+        if body is None:
+            raise ApiError(f"not found: {url}")
+        return body
 
     def by_art_unit(self, art_unit: str, limit: int | None = None) -> Iterator[Application]:
         return self.search(f"applicationMetaData.groupArtUnitNumber:{art_unit}", limit)

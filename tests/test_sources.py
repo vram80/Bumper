@@ -60,6 +60,18 @@ class TextTests(unittest.TestCase):
         data = textextract.to_docx("Title <&>", "line one\nline two")
         self.assertEqual(textextract.docx_text(data), "Title <&>\nline one\nline two")
 
+    def test_tar_archive(self):
+        import tarfile
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tar:
+            body = b"<doc><p>RESPONSE TO AMENDMENT</p><p>Claims 1-6 are rejected.</p></doc>"
+            info = tarfile.TarInfo("16000001/ABC/Final Rejection.xml")
+            info.size = len(body)
+            tar.addfile(info, io.BytesIO(body))
+        text = textextract.extract(buf.getvalue(), "XML")
+        self.assertIn("Claims 1-6 are rejected.", text)
+        self.assertNotIn("Final Rejection.xml", text)
+
     def test_xml(self):
         self.assertIn("rejected", textextract.extract(b"<a><b>rejected</b></a>", "XML"))
 

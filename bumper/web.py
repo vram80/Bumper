@@ -14,8 +14,28 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import db, doccodes, lookup, metrics, search, textextract
+from .events import COUNTED_ACTIONS, Kind, classify
+
+EXAMINER_ACTIONS = COUNTED_ACTIONS | {Kind.ALLOWANCE}
 
 STATIC = Path(__file__).parent / "static"
+
+
+def current_art_unit(apps: list[db.Application]) -> str | None:
+    """The art unit of the examiner's most recent work.
+
+    Examiners move between units over their careers; peers are the examiners
+    in the unit they work in now, which is the unit of the application with the
+    latest event (ties broken by filing date).
+    """
+    def latest(a: db.Application):
+        # Only the examiner's own actions count: fee payments and other late
+        # events do not show where the examiner works now.
+        acted = (e.date for e in a.events if classify(e.code, e.description) in EXAMINER_ACTIONS)
+        return (max(acted, default=None) or a.filing_date or date.min, a.filing_date or date.min)
+
+    dated = [a for a in apps if a.art_unit]
+    return max(dated, key=latest).art_unit if dated else None
 
 
 class Store:
@@ -44,11 +64,7 @@ class Store:
             conn.close()
         self._apps = dict(grouped)
         self._reports = {name: metrics.examiner_report(name, apps, self.as_of) for name, apps in grouped.items()}
-        self._home_unit = {}
-        for name, apps in grouped.items():
-            units = [a.art_unit for a in apps if a.art_unit]
-            if units:
-                self._home_unit[name] = max(set(units), key=units.count)
+        self._home_unit = {n: u for n, apps in grouped.items() if (u := current_art_unit(apps))}
         self._stamp = stamp
 
     def examiner(self, name: str) -> dict | None:
