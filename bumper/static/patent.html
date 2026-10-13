@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Patent Reader</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/patent.css">
+</head>
+<body class="reader">
+<header id="topbar"><span class="brand">Bumper</span><a href="/search">Search</a><a href="/lookup">Lookup</a><a href="/patent">Reader</a><a href="/examiner">Examiners</a><a href="/artunit">Art Units</a>
+  <form id="rsearch" class="rsearch"><input id="rq" placeholder="Patent number or search words" autocomplete="off"></form>
+  <span class="rtools">
+    <button class="tb" id="sidebarBtn" title="Sections">☰</button>
+    <button class="tb" id="starBtn" title="Favourite">☆</button>
+    <span class="menu"><button class="tb" id="pdfBtn">PDF ▾</button>
+      <span class="menu-list" id="pdfMenu"><a id="pdfRead" target="_blank" rel="noopener">Read PDF</a><a id="pdfDownload" download>Download PDF</a>
+        <a id="pdfEmail">Email PDF link</a><a id="extLink" target="_blank" rel="noopener">Open on Google Patents</a></span></span>
+    <span class="menu"><button class="tb" id="citeBtn">Cite ▾</button>
+      <span class="menu-list" id="citeMenu"><a data-fmt="bibtex">BibTeX</a><a data-fmt="enw">EndNote</a><a data-fmt="ris">RIS (RefMan)</a></span></span>
+    <span class="menu"><button class="tb" id="setBtn" title="Reading settings">Aa ▾</button>
+      <span class="menu-list settings" id="setMenu">
+        <label>Text size <span class="seg" data-set="size"><button data-v="small">A-</button><button data-v="regular">A</button><button data-v="large">A+</button></span></label>
+        <label>Typeface <span class="seg" data-set="font"><button data-v="serif">Serif</button><button data-v="sans">Sans</button></span></label>
+        <label>Reading mode <span class="seg" data-set="mode"><button data-v="light">Light</button><button data-v="dark">Dark</button></span></label>
+        <label>Background <span class="seg" data-set="bg"><button data-v="on">On</button><button data-v="off">Off</button></span></label>
+        <label>Background tone <span class="seg" data-set="bgtone"><button data-v="normal">Normal</button><button data-v="invert">Inverted</button></span></label>
+        <button class="btn" id="resetSettings">Reset</button>
+      </span></span>
+  </span>
+</header>
+<div id="backdrop"></div>
+<div id="busy" hidden><div class="spin"></div></div>
+<nav id="sidebar"><a class="snum" href="#top" id="sideNum">—</a><ul id="sideList"></ul></nav>
+<div id="scrim"></div>
+<main id="content"><a id="top"></a><div id="doc"><div class="empty">Enter a patent number or search words above.</div></div></main>
+<aside id="strip"><button id="stripTab" title="Drawings">▦</button><div id="stripList"></div></aside>
+<div id="gallery" hidden>
+  <div class="gbar"><span id="gcap"></span><button data-g="prev">‹</button><button data-g="next">›</button><button data-g="play">▶</button>
+    <label>Zoom <input type="range" id="gzoom" min="0.75" max="5" step="0.05" value="1"></label>
+    <button data-g="rotate">⟳ Rotate</button><button data-g="reset">Reset</button><button data-g="close">✕</button></div>
+  <div class="gstage"><img id="gimg" alt="Drawing sheet"></div>
+</div>
+<div id="dialog" hidden><div class="dbox"><div class="dhead"><b id="dtitle"></b><button id="dclose">✕</button></div><div class="dcontent" id="dbody"></div></div></div>
+<div id="pop" hidden></div>
+<script src="/static/common.js"></script>
+<script src="/static/patent.js"></script>
+</body>
+</html>

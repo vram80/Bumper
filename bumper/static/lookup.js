@@ -24,7 +24,8 @@ async function load(type, number) {
     <div class="sub">Application ${esc(b.application_number)}${b.patent_number ? ` · Patent ${esc(b.patent_number)}` : ""}
       ${b.earliest_publication_number ? ` · Publication ${esc(b.earliest_publication_number)}` : ""}</div>
     <div class="toolbar">
-      ${L.patent_pdf ? `<a class="btn primary" href="${L.patent_pdf}" target="_blank" rel="noopener">Patent PDF</a>
+      ${b.patent_number || b.earliest_publication_number ? `<a class="btn primary" href="/patent?type=${b.patent_number ? "pat" : "pub"}&n=${encodeURIComponent(b.patent_number || b.earliest_publication_number)}">Read patent</a>` : ""}
+      ${L.patent_pdf ? `<a class="btn" href="${L.patent_pdf}" target="_blank" rel="noopener">Patent PDF</a>
         <a class="btn" href="#" data-text="pat:${esc(b.patent_number)}">Patent text</a>` : ""}
       ${L.publication_pdf ? `<a class="btn ${L.patent_pdf ? "" : "primary"}" href="${L.publication_pdf}" target="_blank" rel="noopener">Publication PDF</a>` : ""}
       ${b.examiner ? `<a class="btn" href="/examiner?id=${encodeURIComponent(b.examiner)}">Examiner statistics</a>` : ""}

@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import db, doccodes, lookup, metrics, search, textextract
+from . import db, doccodes, lookup, metrics, reader, search, textextract
 from .events import COUNTED_ACTIONS, Kind, classify
 
 EXAMINER_ACTIONS = COUNTED_ACTIONS | {Kind.ALLOWANCE}
@@ -142,6 +142,7 @@ def _filters(q: dict[str, list[str]]) -> dict[str, list[str]]:
 
 def make_handler(store: Store, service: lookup.Service | None = None):
     service = service or lookup.Service(store.db_path)
+    patents = reader.Reader(service)
     class Handler(BaseHTTPRequestHandler):
         server_version = "Bumper/0.1"
 
@@ -189,6 +190,19 @@ def make_handler(store: Store, service: lookup.Service | None = None):
                 return self._page("search.html")
             if path == "/lookup":
                 return self._page("lookup.html")
+            if path == "/patent":
+                return self._page("patent.html")
+            if path == "/api/patent/read":
+                return self._json(patents.read(q.get("type", "pat"), q.get("n", "")))
+            if path == "/api/patent/page":
+                return self._send(200, patents.page_image(q.get("type", "pat"), q.get("n", ""), int(q.get("page", 1)),
+                                                          int(q.get("w", 1000))), "image/png",
+                                  {"Cache-Control": "max-age=86400"})
+            if path == "/api/patent/search":
+                return self._json(patents.search(q.get("q", ""), int(q.get("page", 1))))
+            if path == "/api/patent/cite":
+                body, ctype, name = patents.citation(q.get("type", "pat"), q.get("n", ""), q.get("format", "ris"))
+                return self._send(200, body.encode(), ctype, {"Content-Disposition": f'attachment; filename="{name}"'})
             if path == "/api/search":
                 conn = db.connect(store.db_path)
                 search.ensure_schema(conn)
