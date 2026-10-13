@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
+import tempfile
 import re
 import sqlite3
 import time
@@ -275,6 +278,80 @@ class Service:
             return result
         finally:
             conn.close()
+
+    def preview(self, kind: str, number: str) -> dict:
+        """A small summary for hover cards: no documents, assignments or family."""
+        n = normalize(kind, number)
+        conn = self._conn()
+        try:
+            cached = conn.execute("SELECT json, fetched FROM odp_cache WHERE key = ?", (f"preview:{kind}:{n}",)).fetchone()
+            if cached and time.time() - cached[1] < CACHE_TTL:
+                return json.loads(cached[0])
+        finally:
+            conn.close()
+        out: dict[str, Any] = {"type": kind, "number": n}
+        try:
+            app_no = self.resolve(kind, number)
+        except NotFound:
+            app_no = None
+        conn = self._conn()
+        try:
+            client = self._client()
+            b: dict = {}
+            if app_no and client:
+                rec = self._cached(conn, f"app:{app_no}", lambda: client.application_raw(app_no))
+                b = biblio_from_record(rec) if rec else {}
+            elif app_no:
+                try:
+                    b = self._local(conn, app_no)["biblio"]
+                except NotFound:
+                    b = {}
+            text = fulltext.get(conn, b.get("patent_number") or (n if kind == "pat" else pub_digits(n)))
+            out.update({
+                "application_number": app_no,
+                "title": b.get("title") or (text or {}).get("title"),
+                "status": b.get("status"),
+                "filing_date": b.get("filing_date"),
+                "patent_number": b.get("patent_number"),
+                "issue_date": b.get("issue_date"),
+                "publication_number": b.get("earliest_publication_number"),
+                "examiner": b.get("examiner"),
+                "art_unit": b.get("art_unit"),
+                "applicant": (b.get("applicants") or [None])[0],
+                "inventors": [i["name"] for i in b.get("inventors") or []][:4],
+                "abstract": (text or {}).get("abstract"),
+            })
+            pdf_kind, pdf_n = (("pat", b["patent_number"]) if b.get("patent_number") else
+                               ("pub", pub_digits(normalize("pub", b["earliest_publication_number"])))
+                               if b.get("earliest_publication_number") else
+                               (kind, n if kind == "pat" else pub_digits(n)) if kind != "app" else (None, None))
+            out["image"] = f"/api/patent/thumb?type={pdf_kind}&n={pdf_n}" if pdf_kind else None
+            conn.execute("INSERT OR REPLACE INTO odp_cache VALUES (?,?,?)",
+                         (f"preview:{kind}:{n}", json.dumps(out), time.time()))
+            conn.commit()
+            return out
+        finally:
+            conn.close()
+
+    def thumbnail(self, kind: str, number: str, width: int = 700) -> bytes:
+        """PNG of the first page of a patent or publication PDF."""
+        n = normalize(kind, number)
+        n = pub_digits(n) if kind == "pub" else n
+        path = self.data_dir / "thumbs" / f"{n}-{width}.png"
+        if path.exists():
+            return path.read_bytes()
+        if not shutil.which("pdftoppm"):
+            raise NotFound("pdftoppm (poppler-utils) is needed for page previews")
+        pdf = self.patent_pdf(kind, n)
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp, "in.pdf")
+            src.write_bytes(pdf)
+            subprocess.run(["pdftoppm", "-f", "1", "-l", "1", "-png", "-scale-to", str(width), str(src),
+                            f"{tmp}/page"], check=True, capture_output=True, timeout=120)
+            png = next(Path(tmp).glob("page*.png"))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(png, path)
+        return path.read_bytes()
 
     def _local(self, conn: sqlite3.Connection, app_no: str) -> dict:
         apps = db._load(conn, "a.app_no = ?", (app_no,))

@@ -234,6 +234,11 @@ def make_handler(store: Store, service: lookup.Service | None = None):
             if path == "/api/patent/pdf":
                 n = q.get("n", "")
                 return self._pdf(service.patent_pdf(q.get("type", "pat"), n), f"{n}.pdf")
+            if path == "/api/preview":
+                return self._json(service.preview(q.get("type", "pat"), q.get("n", "")))
+            if path == "/api/patent/thumb":
+                return self._send(200, service.thumbnail(q.get("type", "pat"), q.get("n", "")), "image/png",
+                                  {"Cache-Control": "max-age=86400"})
             if path == "/api/patent/text":
                 return self._json(service.patent_text(q.get("type", "pat"), q.get("n", "")))
             if path == "/examiner":
