@@ -6,7 +6,18 @@ const FACET_LABELS = { kb: "Collection", doc_code: "Document type", art_unit: "A
 // Search-API parameter name for each facet column.
 const FACET_PARAM = { kb: "kb", doc_code: "code", art_unit: "artunit", examiner: "examiner", customer_number: "customer",
   next_out: "next_out", prev_out: "prev_out", next_in: "next_in", prev_in: "prev_in" };
-let codeLabels = {}, groups = {}, selected = {}, page = 1;
+let codeLabels = {}, groups = {}, selected = {}, page = 1, currentDoc = null;
+
+function markActive() {
+  document.querySelectorAll(".result").forEach(el => el.classList.toggle("active", el.dataset.id === currentDoc));
+}
+
+// Open a result in the document pane (text and PDF side by side).
+function openDoc(id) {
+  currentDoc = id;
+  markActive();
+  showDocument($("doc"), id, { query: $("q").value });
+}
 
 function label(col, v) { return ["doc_code", "next_out", "prev_out", "next_in", "prev_in"].includes(col) ? `${codeLabels[v] ?? v} (${v})` : v; }
 
@@ -29,15 +40,17 @@ async function run(resetPage = true) {
   if (!res.ok) { $("summary").textContent = data.error; $("results").innerHTML = ""; return; }
   $("summary").textContent = `${data.total.toLocaleString()} document${data.total === 1 ? "" : "s"}`;
   $("results").innerHTML = data.results.map(r => `
-    <div class="result"><h3><a data-id="${esc(r.doc_id)}">${esc(r.doc_desc || r.doc_code)}</a></h3>
+    <div class="result" data-id="${esc(r.doc_id)}"><h3><a data-id="${esc(r.doc_id)}">${esc(r.doc_desc || r.doc_code)}</a></h3>
       <div class="meta">${esc(r.app_no ?? "")} · ${esc(r.mail_date ?? "")} · ${esc(r.examiner ?? "")} · AU ${esc(r.art_unit ?? "–")}
         ${r.filer ? ` · signed by ${esc(r.filer)}` : ""}${r.next_out ? ` · next action: ${esc(codeLabels[r.next_out] ?? r.next_out)}` : ""}</div>
       <div class="snippet">${r.snippet}</div></div>`).join("") || `<div class="empty">No documents match.</div>`;
-  $("results").querySelectorAll("a[data-id]").forEach(a => a.addEventListener("click", () => openViewer(a.dataset.id)));
+  $("results").querySelectorAll("a[data-id]").forEach(a => a.addEventListener("click", () => openDoc(a.dataset.id)));
+  if (data.results.length && (!currentDoc || !data.results.some(r => r.doc_id === currentDoc))) openDoc(data.results[0].doc_id);
+  else markActive();
   const pages = Math.ceil(data.total / data.per_page);
   $("pager").innerHTML = pages > 1 ? `${page > 1 ? `<button class="btn" data-p="${page - 1}">Previous</button>` : ""}
     <span class="meta">Page ${page} of ${pages}</span>${page < pages ? `<button class="btn" data-p="${page + 1}">Next</button>` : ""}` : "";
-  $("pager").querySelectorAll("[data-p]").forEach(b => b.addEventListener("click", () => { page = +b.dataset.p; run(false); scrollTo(0, 0); }));
+  $("pager").querySelectorAll("[data-p]").forEach(b => b.addEventListener("click", () => { page = +b.dataset.p; run(false); b.closest(".pane").scrollTop = 0; }));
   $("facets").innerHTML = Object.entries(data.facets).filter(([, v]) => v.length).map(([col, vals]) => `
     <div><h4>${FACET_LABELS[col]}</h4>${vals.map(([v, n]) => `<label><span><input type="checkbox" data-col="${col}" value="${esc(v)}"
       ${(selected[col] ?? []).includes(v) ? "checked" : ""}> ${esc(label(col, v))}</span><span class="meta">${n}</span></label>`).join("")}</div>`).join("")

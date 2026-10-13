@@ -220,6 +220,15 @@ def make_handler(store: Store, service: lookup.Service | None = None):
                 return self._pdf(service.document_pdf(doc["app_no"] or "", doc["doc_id"]), f"{doc['doc_id']}.pdf")
             if path == "/api/lookup":
                 return self._json(service.lookup(q.get("type", "app"), q.get("q", "")))
+            if path == "/api/file/text":
+                return self._json(service.document_text(q.get("app", ""), q.get("doc", "")))
+            if path == "/api/file/docx":
+                text = service.document_text(q.get("app", ""), q.get("doc", ""))["text"]
+                return self._send(200, textextract.to_docx(q.get("title") or q.get("doc", ""), text),
+                                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                  {"Content-Disposition": f'attachment; filename="{q.get("doc")}.docx"'})
+            if path == "/api/file/drawings":
+                return self._pdf(service.drawings_pdf(q.get("app", "")), f"{q.get('app')}-drawings.pdf")
             if path == "/api/file/pdf":
                 return self._pdf(service.document_pdf(q.get("app", ""), q.get("doc", "")), f"{q.get('doc')}.pdf")
             if path == "/api/patent/pdf":

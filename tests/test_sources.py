@@ -72,6 +72,19 @@ class TextTests(unittest.TestCase):
         self.assertIn("Claims 1-6 are rejected.", text)
         self.assertNotIn("Final Rejection.xml", text)
 
+    def test_office_action_xml_blocks(self):
+        xml = b"""<doc xmlns:c="urn:c"><c:DocumentMetadata><c:DocumentCode>CTFR</c:DocumentCode></c:DocumentMetadata>
+        <c:BoundaryDataBag><c:HeaderText>Application/Control Number: 15/929,200 Page 2</c:HeaderText></c:BoundaryDataBag>
+        <c:FormParagraph><c:FormParagraphNumber>07-03-aia</c:FormParagraphNumber>
+        <c:P>Claims <c:B>1-6</c:B> are rejected under 35 U.S.C. 101.</c:P>
+        <c:P>See <c:I>Alice</c:I>.<c:OL><c:LI>first item</c:LI></c:OL></c:P></c:FormParagraph></doc>"""
+        text = textextract.xml_text(xml)
+        self.assertIn("Claims 1-6 are rejected under 35 U.S.C. 101.", text)
+        self.assertIn("first item", text)
+        self.assertNotIn("Page 2", text)
+        self.assertNotIn("07-03-aia", text)
+        self.assertNotIn("CTFR", text)
+
     def test_xml(self):
         self.assertIn("rejected", textextract.extract(b"<a><b>rejected</b></a>", "XML"))
 

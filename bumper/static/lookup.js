@@ -55,14 +55,16 @@ async function load(type, number) {
       <table><tr><th>Date</th><th>Code</th><th>Description</th><th></th><th class="num">Pages</th></tr>
       ${d.documents.map(doc => `<tr><td>${esc(doc.date)}</td><td>${esc(doc.code)}</td><td>${esc(doc.description)}</td>
         <td>${doc.direction === "INCOMING" ? "in" : doc.direction === "OUTGOING" ? "out" : ""}</td><td class="num">${esc(doc.pages ?? "")}</td>
-        <td><a href="#" data-doc="${esc(doc.doc_id)}" data-indexed="${doc.indexed ? 1 : ""}" data-title="${esc(`${doc.description} (${doc.date})`)}">View</a></td></tr>`).join("")}
+        <td><a href="#" data-doc="${esc(doc.doc_id)}" data-indexed="${doc.indexed ? 1 : ""}" data-title="${esc(doc.description)}"
+          data-code="${esc(doc.code)}" data-date="${esc(doc.date)}">View</a></td></tr>`).join("")}
       </table></div>
     <div class="card apps"><h3>Transaction history <small>${b.transactions.length}</small></h3>
       <table><tr><th>Date</th><th>Code</th><th>Event</th></tr>
       ${b.transactions.map(t => `<tr><td>${esc(t.date)}</td><td>${esc(t.code)}</td><td>${esc(t.description)}</td></tr>`).join("")}</table></div>`;
   out.querySelectorAll("a[data-doc]").forEach(a => a.addEventListener("click", e => {
     e.preventDefault();
-    openViewer(a.dataset.indexed ? a.dataset.doc : { app: b.application_number, doc_id: a.dataset.doc, title: a.dataset.title });
+    openViewer(a.dataset.indexed ? a.dataset.doc
+      : { app: b.application_number, doc_id: a.dataset.doc, title: a.dataset.title, code: a.dataset.code, date: a.dataset.date });
   }));
   out.querySelectorAll("a[data-text]").forEach(a => a.addEventListener("click", async e => {
     e.preventDefault();

@@ -352,6 +352,64 @@ class Service:
                             "(bumper fulltext load) or install tesseract for OCR."}
         return {"source": "pdf", "number": n, "description": text}
 
+    def _document_entry(self, conn: sqlite3.Connection, app_no: str, doc_id: str) -> dict | None:
+        client = self._client()
+        if client is None:
+            return None
+        bag = self._cached(conn, f"docs:{app_no}", lambda: client.documents(app_no))
+        return next((d for d in bag if d.get("documentIdentifier") == doc_id), None)
+
+    def document_text(self, app_no: str, doc_id: str) -> dict:
+        """Text of one file-history document, indexed or not.
+
+        Uses the indexed copy when there is one; otherwise downloads the
+        USPTO's XML or Word rendition (or the PDF text layer) and caches it.
+        """
+        conn = self._conn()
+        try:
+            row = conn.execute("SELECT text FROM documents WHERE doc_id = ?", (doc_id,)).fetchone()
+            if row and row[0]:
+                return {"doc_id": doc_id, "source": "index", "text": row[0]}
+            cached = conn.execute("SELECT json FROM odp_cache WHERE key = ?", (f"text:{doc_id}",)).fetchone()
+            if cached:
+                return json.loads(cached[0])
+            doc = self._document_entry(conn, app_no, doc_id)
+            if doc is None:
+                raise NotFound("document text is not stored locally and USPTO_API_KEY is not set")
+            opts = {(o.get("mimeTypeIdentifier") or "").upper(): o for o in doc.get("downloadOptionBag") or []}
+            client = self._client()
+            result = {"doc_id": doc_id, "source": "none", "text": ""}
+            for mime in ("XML", "MS_WORD", "PDF"):
+                if mime in opts and opts[mime].get("downloadUrl"):
+                    text = textextract.extract(client.download(opts[mime]["downloadUrl"]), mime)
+                    if text:
+                        result = {"doc_id": doc_id, "source": mime.lower(), "text": text}
+                        break
+            conn.execute("INSERT OR REPLACE INTO odp_cache VALUES (?,?,?)",
+                         (f"text:{doc_id}", json.dumps(result), time.time()))
+            conn.commit()
+            return result
+        finally:
+            conn.close()
+
+    def drawings_pdf(self, app_no: str) -> bytes:
+        """The application's most recent drawings document, as a PDF."""
+        conn = self._conn()
+        try:
+            row = conn.execute("SELECT doc_id FROM file_docs WHERE app_no = ? AND doc_code IN ('DRW', 'DRW.NONBW') "
+                               "ORDER BY mail_date DESC LIMIT 1", (app_no,)).fetchone()
+            doc_id = row[0] if row else None
+            if doc_id is None and self._client() is not None:
+                bag = self._cached(conn, f"docs:{app_no}", lambda: self._client().documents(app_no))
+                drawings = sorted((d for d in bag if d.get("documentCode") in ("DRW", "DRW.NONBW")),
+                                  key=lambda d: d.get("officialDate") or "", reverse=True)
+                doc_id = drawings[0]["documentIdentifier"] if drawings else None
+        finally:
+            conn.close()
+        if doc_id is None:
+            raise NotFound(f"no drawings on file for {app_no}")
+        return self.document_pdf(app_no, doc_id)
+
     def document_pdf(self, app_no: str, doc_id: str) -> bytes:
         conn = self._conn()
         try:

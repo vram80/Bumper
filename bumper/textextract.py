@@ -30,18 +30,59 @@ def _clean(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
+# USPTO office-action XML (ST.96-based): paragraphs and list items are blocks;
+# page headers and form-paragraph bookkeeping are not part of the reading text.
+XML_BLOCKS = {"P", "LI", "Heading", "p", "li", "heading", "claim-text", "Title"}
+XML_SKIP = {"BoundaryDataBag", "DocumentMetadata", "FormParagraphNumber", "FormParagraphCategory",
+            "ExaminationProgramCode", "RelatedFormParagraph"}
+
+
+def _local(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
 def xml_text(data: bytes) -> str:
     try:
         root = ElementTree.fromstring(data)
     except ElementTree.ParseError:
         return _clean(re.sub(rb"<[^>]+>", b" ", data).decode("utf-8", "replace"))
-    lines = []
-    for el in root.iter():
-        if el.text and el.text.strip():
-            lines.append(el.text.strip())
-        if el.tail and el.tail.strip():
-            lines.append(el.tail.strip())
-    return _clean("\n".join(lines))
+    if not any(_local(el.tag) in XML_BLOCKS for el in root.iter()):
+        # Unknown schema: one line per text-bearing element.
+        lines = [t.strip() for el in root.iter() for t in (el.text, el.tail) if t and t.strip()]
+        return _clean("\n".join(lines))
+
+    blocks: list[str] = []
+
+    def inline(el: ElementTree.Element) -> str:
+        parts = [el.text or ""]
+        for child in el:
+            if _local(child.tag) not in XML_SKIP:
+                parts.append(inline(child) if _local(child.tag) not in XML_BLOCKS else "")
+            parts.append(child.tail or "")
+        return "".join(parts)
+
+    def walk(el: ElementTree.Element) -> None:
+        name = _local(el.tag)
+        if name in XML_SKIP:
+            return
+        if name in XML_BLOCKS:
+            # Nested blocks (a list inside a paragraph) become their own lines.
+            text = re.sub(r"\s+", " ", inline(el)).strip()
+            if text:
+                blocks.append(text)
+            for child in el:
+                if _local(child.tag) not in XML_BLOCKS:
+                    for nested in child.iter():
+                        if _local(nested.tag) in XML_BLOCKS and nested is not child:
+                            walk(nested)
+                else:
+                    walk(child)
+            return
+        for child in el:
+            walk(child)
+
+    walk(root)
+    return _clean("\n\n".join(blocks))
 
 
 def docx_text(data: bytes) -> str:

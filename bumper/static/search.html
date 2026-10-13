@@ -5,41 +5,44 @@
 <title>Document Search</title>
 <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>
+<body class="workspace">
 <header><span class="brand">Bumper</span><a href="/search">Search</a><a href="/lookup">Lookup</a><a href="/examiner">Examiners</a><a href="/artunit">Art Units</a></header>
-<main>
-  <form class="search" id="form"><input id="q" placeholder='Search office actions, responses and decisions, e.g. "abstract idea"~5 +eligibility' autocomplete="off" autofocus></form>
-  <div class="toolbar">
-    <select id="kb"><option value="">All collections</option><option value="ex_parte">Ex parte prosecution</option><option value="inter_partes">PTAB trials</option><option value="firm">Firm documents</option></select>
-    <select id="group"><option value="">All document types</option></select>
-    <select id="sort"><option value="relevance">Best match</option><option value="recent">Newest first</option></select>
-    <label><input type="checkbox" id="all"> Require every term</label>
-    <a class="btn" href="#" id="helpBtn">Query syntax</a>
-  </div>
-  <div class="layout">
-    <aside class="card facet" id="facets"><div class="meta">Filters appear after a search.</div></aside>
-    <section class="card"><div id="summary" class="meta"></div><div id="results"></div><div class="pager" id="pager"></div></section>
-  </div>
-  <details id="help" style="margin-top:16px">
-    <summary>Query syntax</summary>
-    <table>
-      <tr><td><code>word</code></td><td>Optional term. Documents matching more terms rank higher.</td></tr>
-      <tr><td><code>+word</code></td><td>The document must contain the term.</td></tr>
-      <tr><td><code>-word</code> or <code>NOT word</code></td><td>The document must not contain the term.</td></tr>
-      <tr><td><code>a OR b</code>, <code>a AND b</code></td><td>Explicit operators.</td></tr>
-      <tr><td><code>"exact phrase"</code></td><td>Words in this order.</td></tr>
-      <tr><td><code>"a b"~10</code></td><td>Words within 10 words of each other, in any order.</td></tr>
-      <tr><td><code>obvio*</code></td><td>Words beginning with the prefix.</td></tr>
-      <tr><td><code>enablment~</code></td><td>Close spellings (up to 2 edits; <code>~1</code> for 1).</td></tr>
-      <tr><td><code>( ... )</code></td><td>Grouping, e.g. <code>(alice OR mayo) +"practical application"</code>.</td></tr>
-      <tr><td><code>field:value</code></td><td>Filters: <code>examiner:</code>, <code>artunit:</code>, <code>customer:</code>, <code>code:</code>, <code>app:</code>,
-        <code>filer:</code>, <code>prev_out:</code>, <code>next_out:</code>, <code>prev_in:</code>, <code>next_in:</code>, <code>year:</code>.
-        Separate several values with <code>|</code>, e.g. <code>artunit:3667|3661</code>.</td></tr>
-    </table>
-    <p class="meta"><b>Previous/next action</b> filters use the application's full file history. For example, <code>code:A.NE next_out:NOA</code>
-      finds after-final responses that were followed by an allowance.</p>
-  </details>
-</main>
+<div class="workbench">
+  <aside class="pane">
+    <form class="search" id="form"><input id="q" placeholder='Search documents, e.g. "abstract idea"~5 +eligibility' autocomplete="off" autofocus></form>
+    <div class="toolbar">
+      <select id="kb"><option value="">All collections</option><option value="ex_parte">Ex parte prosecution</option><option value="inter_partes">PTAB trials</option><option value="firm">Firm documents</option></select>
+      <select id="group"><option value="">All document types</option></select>
+      <label><input type="checkbox" id="all"> Require every term</label>
+      <a class="btn" href="#" id="helpBtn">Query syntax</a>
+    </div>
+    <div class="facet" id="facets"><div class="meta">Filters appear after a search.</div></div>
+    <details id="help" style="margin-top:16px">
+      <summary>Query syntax</summary>
+      <table>
+        <tr><td><code>word</code></td><td>Optional term; more matches rank higher.</td></tr>
+        <tr><td><code>+word</code></td><td>Must contain.</td></tr>
+        <tr><td><code>-word</code></td><td>Must not contain.</td></tr>
+        <tr><td><code>a OR b</code></td><td>Either term.</td></tr>
+        <tr><td><code>"exact phrase"</code></td><td>Words in order.</td></tr>
+        <tr><td><code>"a b"~10</code></td><td>Within 10 words.</td></tr>
+        <tr><td><code>obvio*</code></td><td>Prefix.</td></tr>
+        <tr><td><code>enablment~</code></td><td>Close spellings.</td></tr>
+        <tr><td><code>( … )</code></td><td>Grouping.</td></tr>
+        <tr><td><code>field:value</code></td><td><code>examiner: artunit: customer: code: app: filer: prev_out: next_out: prev_in: next_in: year:</code>; several values with <code>|</code>.</td></tr>
+      </table>
+      <p class="meta"><code>code:A.NE next_out:NOA</code> finds after-final responses that were followed by an allowance.</p>
+    </details>
+  </aside>
+  <section class="pane">
+    <div class="toolbar" style="flex-direction:row;justify-content:space-between">
+      <span id="summary" class="meta"></span>
+      <select id="sort"><option value="relevance">Best match</option><option value="recent">Newest first</option></select>
+    </div>
+    <div id="results"></div><div class="pager" id="pager"></div>
+  </section>
+  <section class="pane" id="doc"><div class="dnote">Select a result to read it here, with its PDF alongside the text.</div></section>
+</div>
 <div id="viewer"></div>
 <script src="/static/common.js"></script>
 <script src="/static/search.js"></script>
