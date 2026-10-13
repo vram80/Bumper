@@ -30,7 +30,9 @@ PAGE_SIZE = 100
 
 
 class ApiError(RuntimeError):
-    pass
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 def _date(value: Any) -> date | None:
@@ -111,7 +113,7 @@ class Client:
                     time.sleep(delay)
                     delay = min(delay * 2, 120)
                     continue
-                raise ApiError(f"{e.code} {e.reason}: {e.read()[:300]!r}") from e
+                raise ApiError(f"{e.code} {e.reason}: {e.read()[:300]!r}", e.code) from e
             except urllib.error.URLError:
                 if attempt < self.retries:
                     time.sleep(delay)
@@ -126,10 +128,24 @@ class Client:
         return json.loads(body) if body else {}
 
     def search(self, query: str, limit: int | None = None) -> Iterator[Application]:
+        """All applications matching ``query``.
+
+        ODP rejects responses over 6 MB with 413; records with long event
+        histories can exceed that at 100 per page, so the page size is halved
+        for that page and restored afterwards.
+        """
         offset = 0
         seen = 0
         while True:
-            data = self._get({"q": query, "offset": offset, "limit": PAGE_SIZE})
+            size = PAGE_SIZE
+            while True:
+                try:
+                    data = self._get({"q": query, "offset": offset, "limit": size})
+                    break
+                except ApiError as e:
+                    if e.status != 413 or size == 1:
+                        raise
+                    size = max(1, size // 2)
             bag = data.get("patentFileWrapperDataBag") or []
             for rec in bag:
                 if (app := parse_record(rec)) is not None:

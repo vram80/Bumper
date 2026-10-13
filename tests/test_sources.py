@@ -184,3 +184,27 @@ class EpoTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PagingTests(unittest.TestCase):
+    def test_oversized_page_is_split(self):
+        from bumper import uspto
+
+        records = [{"applicationNumberText": str(16000000 + i), "applicationMetaData": {}} for i in range(130)]
+        calls = []
+
+        class Fake(uspto.Client):
+            def __init__(self):
+                pass
+
+            def _get(self, params, url=None):
+                calls.append(params["limit"])
+                if params["limit"] > 40:
+                    raise uspto.ApiError("413 Payload Too Large", 413)
+                start = params["offset"]
+                return {"count": len(records), "patentFileWrapperDataBag": records[start:start + params["limit"]]}
+
+        got = [a.app_no for a in Fake().search("q")]
+        self.assertEqual(len(got), 130)
+        self.assertEqual(len(set(got)), 130)
+        self.assertIn(25, calls)

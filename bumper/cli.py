@@ -33,21 +33,32 @@ def cmd_demo(args: argparse.Namespace) -> int:
     return 0
 
 
+def _store(conn, apps, batch: int = 200) -> int:
+    """Save applications in batches so an interrupted download keeps its progress."""
+    total, chunk = 0, []
+    for app in apps:
+        chunk.append(app)
+        if len(chunk) >= batch:
+            total += db.upsert(conn, chunk)
+            chunk = []
+    return total + (db.upsert(conn, chunk) if chunk else 0)
+
+
 def cmd_fetch(args: argparse.Namespace) -> int:
     client = uspto.Client()
     conn = db.connect(args.db)
     total = 0
     for name in args.examiner or []:
-        total += db.upsert(conn, client.by_examiner(name, args.limit))
+        total += _store(conn, client.by_examiner(name, args.limit))
         print(f"examiner {name}: {total} applications so far")
     for unit in args.art_unit or []:
-        total += db.upsert(conn, client.by_art_unit(unit, args.limit))
+        total += _store(conn, client.by_art_unit(unit, args.limit))
         print(f"art unit {unit}: {total} applications so far")
     if args.with_peers:
         # Pull each fetched examiner's home art unit so percentile ranks have peers.
         units = {u for name in args.examiner or [] for u, _ in db.examiner_art_units(conn, name.upper())[:1]}
         for unit in sorted(units - set(args.art_unit or [])):
-            total += db.upsert(conn, client.by_art_unit(unit, args.limit))
+            total += _store(conn, client.by_art_unit(unit, args.limit))
             print(f"peer art unit {unit}: {total} applications so far")
     print(f"Stored {total} applications in {args.db}")
     return 0
