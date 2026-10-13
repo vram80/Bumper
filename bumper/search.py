@@ -320,10 +320,11 @@ def search(conn: sqlite3.Connection, query: str = "", filters: dict[str, list[st
         args = params
         order = "d.mail_date DESC"
     page = max(1, page)
-    rows = conn.execute(f"{sql} ORDER BY {order} LIMIT ? OFFSET ?", [*args, per_page, (page - 1) * per_page])
+    cur = conn.execute(f"{sql} ORDER BY {order} LIMIT ? OFFSET ?", [*args, per_page, (page - 1) * per_page])
+    names = [c[0] for c in cur.description]
     results = []
-    for r in rows:
-        item = dict(r)
+    for r in cur:
+        item = dict(zip(names, r))
         snip = item.pop("snip") or ""
         item["snippet"] = _snippet_html(snip) if parsed.fts else html.escape(snip)
         results.append(item)

@@ -46,3 +46,46 @@ function drawChart(id, config) {
   if (charts[id]) charts[id].destroy();
   charts[id] = new Chart(document.getElementById(id), config);
 }
+
+// Document viewer overlay with text, details, PDF and Word tabs.
+// `doc` is either an indexed document id (string) or {app, doc_id, title} for an unindexed file.
+async function openViewer(doc) {
+  const root = document.getElementById("viewer");
+  const indexed = typeof doc === "string";
+  let meta = null;
+  if (indexed) {
+    const res = await fetch(`/api/doc?id=${encodeURIComponent(doc)}`);
+    if (!res.ok) return alert("Document not found");
+    meta = await res.json();
+  }
+  const id = indexed ? meta.doc_id : doc.doc_id;
+  const pdfUrl = indexed ? `/api/doc/pdf?id=${encodeURIComponent(id)}`
+                         : `/api/file/pdf?app=${encodeURIComponent(doc.app)}&doc=${encodeURIComponent(id)}`;
+  const title = indexed ? `${meta.doc_desc || meta.doc_code} · ${meta.app_no ?? ""} · ${meta.mail_date ?? ""}` : doc.title;
+  const tabs = indexed ? ["Text", "Details", "PDF"] : ["PDF"];
+  root.innerHTML = `<div class="viewer"><div class="box">
+    <div class="head"><span class="grow">${esc(title)}</span>
+      <span class="tabs" style="margin:0">${tabs.map((t, i) => `<button data-tab="${t}" class="${i ? "" : "on"}">${t}</button>`).join("")}</span>
+      ${indexed ? `<a class="btn" href="/api/doc/docx?id=${encodeURIComponent(id)}">Word</a>` : ""}
+      <a class="btn" href="${pdfUrl}" target="_blank" rel="noopener">Open PDF</a>
+      <button class="btn" data-close>Close</button></div>
+    <div class="body" id="viewerBody"></div></div></div>`;
+  const body = root.querySelector("#viewerBody");
+  const show = tab => {
+    root.querySelectorAll("[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+    if (tab === "Text") body.innerHTML = `<pre>${esc(meta.text || "No text was extracted for this document.")}</pre>`;
+    else if (tab === "Details") {
+      const rows = [["Application", meta.app_no], ["Document code", meta.doc_code], ["Description", meta.doc_desc],
+        ["Direction", meta.direction], ["Date", meta.mail_date], ["Examiner", meta.examiner], ["Art unit", meta.art_unit],
+        ["Customer number", meta.customer_number], ["Correspondent", meta.correspondent], ["Signed by", meta.filer],
+        ["Registration no.", meta.filer_reg], ["Previous outgoing action", meta.prev_out], ["Next outgoing action", meta.next_out],
+        ["Previous incoming filing", meta.prev_in], ["Next incoming filing", meta.next_in], ["Pages", meta.pages], ["Collection", meta.kb]];
+      body.innerHTML = `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v ?? "–")}</dd>`).join("")}</dl>`;
+    } else body.innerHTML = `<iframe src="${pdfUrl}" title="PDF"></iframe>`;
+  };
+  root.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => show(b.dataset.tab)));
+  root.querySelector("[data-close]").addEventListener("click", () => { root.innerHTML = ""; });
+  root.querySelector(".viewer").addEventListener("click", e => { if (e.target.classList.contains("viewer")) root.innerHTML = ""; });
+  show(tabs[0]);
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape") { const v = document.getElementById("viewer"); if (v) v.innerHTML = ""; } });

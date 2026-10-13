@@ -8,7 +8,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import db, demo, metrics, uspto
+from . import db, demo, docindex, epo, fulltext, metrics, search, uspto
 
 DEFAULT_DB = "bumper.db"
 
@@ -19,8 +19,17 @@ def _as_of(value: str | None) -> date | None:
 
 def cmd_demo(args: argparse.Namespace) -> int:
     conn = db.connect(args.db)
-    n = db.upsert(conn, demo.generate(args.examiners, args.apps, args.seed))
-    print(f"Wrote {n} synthetic applications to {args.db}")
+    apps = demo.generate(args.examiners, args.apps, args.seed)
+    n = db.upsert(conn, apps)
+    search.ensure_schema(conn)
+    docs, history = demo.generate_documents(apps, args.seed)
+    conn.executemany("INSERT OR REPLACE INTO file_docs VALUES (?,?,?,?,?)", history)
+    for doc in docs:
+        search.upsert_document(conn, doc)
+    for app_no in {d["app_no"] for d in docs}:
+        search.trace_actions(conn, app_no, docindex.SUBSTANTIVE)
+    conn.commit()
+    print(f"Wrote {n} synthetic applications and {len(docs)} synthetic documents to {args.db}")
     return 0
 
 
@@ -49,6 +58,49 @@ def cmd_load(args: argparse.Namespace) -> int:
     paths = [p for arg in args.paths for p in (sorted(Path(arg).glob("**/*.json")) if Path(arg).is_dir() else [Path(arg)])]
     n = db.upsert(conn, uspto.read_bulk(paths))
     print(f"Loaded {n} applications from {len(paths)} file(s) into {args.db}")
+    return 0
+
+
+def cmd_docs(args: argparse.Namespace) -> int:
+    conn = db.connect(args.db)
+    search.ensure_schema(conn)
+    pdf_dir = Path(args.data_dir) / "pdfs"
+    if args.docs_cmd == "files":
+        paths = [p for arg in args.paths for p in (sorted(x for x in Path(arg).rglob("*") if x.suffix.lower() in
+                 (".pdf", ".docx", ".txt", ".xml")) if Path(arg).is_dir() else [Path(arg)])]
+        print(f"Indexed {docindex.index_files(conn, paths, args.kb)} files into collection {args.kb!r}")
+        return 0
+    client = uspto.Client()
+    if args.docs_cmd == "ptab":
+        print(f"Indexed {docindex.index_ptab(client, conn, args.query, pdf_dir, args.limit)} PTAB documents")
+        return 0
+    apps = list(args.app or [])
+    if args.sample:
+        apps += docindex.sample_applications(conn, args.sample, args.seed, args.examiner, args.art_unit)
+    codes = set(args.codes.split("|")) if args.codes else None
+    total = 0
+    for i, app_no in enumerate(apps, 1):
+        try:
+            n = docindex.index_application(client, conn, app_no, pdf_dir, codes)
+        except (uspto.ApiError, OSError) as e:
+            print(f"[{i}/{len(apps)}] {app_no}: failed ({e})", file=sys.stderr)
+            continue
+        total += n
+        print(f"[{i}/{len(apps)}] {app_no}: {n} documents")
+    print(f"Indexed {total} documents")
+    return 0
+
+
+def cmd_fulltext(args: argparse.Namespace) -> int:
+    conn = db.connect(args.db)
+    files = [p for arg in args.paths for p in (sorted(Path(arg).glob("*.zip")) + sorted(Path(arg).glob("*.xml"))
+             if Path(arg).is_dir() else [Path(arg)])]
+    total = 0
+    for path in files:
+        n = fulltext.load(conn, path)
+        total += n
+        print(f"{path.name}: {n} documents")
+    print(f"Loaded {total} patents/publications")
     return 0
 
 
@@ -88,13 +140,14 @@ def cmd_report(args: argparse.Namespace) -> int:
 def cmd_serve(args: argparse.Namespace) -> int:
     from .web import serve
 
-    serve(args.db, args.host, args.port, _as_of(args.as_of))
+    serve(args.db, args.host, args.port, _as_of(args.as_of), args.data_dir)
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="bumper", description=__doc__)
     p.add_argument("--db", default=DEFAULT_DB, help=f"SQLite database path (default {DEFAULT_DB})")
+    p.add_argument("--data-dir", default="data", help="where downloaded PDFs are cached (default ./data)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("demo", help="populate the database with synthetic data")
@@ -114,6 +167,27 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("paths", nargs="+")
     s.set_defaults(func=cmd_load)
 
+    s = sub.add_parser("docs", help="build the document search index")
+    dsub = s.add_subparsers(dest="docs_cmd", required=True)
+    d = dsub.add_parser("fetch", help="download and index file-wrapper documents from the USPTO")
+    d.add_argument("--app", action="append", help="application number (repeatable)")
+    d.add_argument("--sample", type=int, help="index N random applications already in the database")
+    d.add_argument("--examiner", help="limit --sample to one examiner")
+    d.add_argument("--art-unit", help="limit --sample to one art unit")
+    d.add_argument("--seed", type=int)
+    d.add_argument("--codes", help="document codes to index, e.g. 'CTNF|CTFR|A...' (default: substantive)")
+    d = dsub.add_parser("files", help="index local PDF/DOCX/TXT files as a private collection")
+    d.add_argument("paths", nargs="+")
+    d.add_argument("--kb", default="firm", help="collection name (default 'firm')")
+    d = dsub.add_parser("ptab", help="index PTAB trial documents (IPR/PGR/CBM) from the USPTO")
+    d.add_argument("query", help="ODP query, e.g. a trial number such as IPR2023-00001")
+    d.add_argument("--limit", type=int, default=200)
+    s.set_defaults(func=cmd_docs)
+
+    s = sub.add_parser("fulltext", help="load USPTO weekly full-text XML (ipg*/ipa* .zip or .xml)")
+    s.add_argument("paths", nargs="+")
+    s.set_defaults(func=cmd_fulltext)
+
     s = sub.add_parser("report", help="print an examiner's statistics")
     s.add_argument("examiner")
     s.add_argument("--as-of", help="report date, YYYY-MM-DD (default today)")
@@ -129,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     try:
         return args.func(args)
-    except uspto.ApiError as e:
+    except (uspto.ApiError, epo.OpsError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
 

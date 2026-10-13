@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import db, metrics
+from . import db, doccodes, lookup, metrics, search, textextract
 
 STATIC = Path(__file__).parent / "static"
 
@@ -120,7 +120,12 @@ def _json_default(o):
     raise TypeError(type(o).__name__)
 
 
-def make_handler(store: Store):
+def _filters(q: dict[str, list[str]]) -> dict[str, list[str]]:
+    return {col: q[key] for key, col in search.FIELDS.items() if key in q}
+
+
+def make_handler(store: Store, service: lookup.Service | None = None):
+    service = service or lookup.Service(store.db_path)
     class Handler(BaseHTTPRequestHandler):
         server_version = "Bumper/0.1"
 
@@ -148,11 +153,64 @@ def make_handler(store: Store):
 
         def do_GET(self) -> None:  # noqa: N802
             url = urlparse(self.path)
-            q = {k: v[0] for k, v in parse_qs(url.query).items()}
+            multi = parse_qs(url.query)
+            q = {k: v[0] for k, v in multi.items()}
             path = url.path.rstrip("/").lower() or "/"
+            try:
+                return self._route(path, url, q, multi)
+            except lookup.NotFound as e:
+                return self._json({"error": str(e)}, 404)
+            except (search.QueryError, ValueError) as e:
+                return self._json({"error": str(e)}, 400)
 
+        def _pdf(self, data: bytes, name: str) -> None:
+            self._send(200, data, "application/pdf", {"Content-Disposition": f'inline; filename="{name}"'})
+
+        def _route(self, path, url, q, multi) -> None:
             if path == "/":
-                return self._send(302, b"", "text/plain", {"Location": "/examiner"})
+                return self._send(302, b"", "text/plain", {"Location": "/search"})
+            if path == "/search":
+                return self._page("search.html")
+            if path == "/lookup":
+                return self._page("lookup.html")
+            if path == "/api/search":
+                conn = db.connect(store.db_path)
+                search.ensure_schema(conn)
+                try:
+                    return self._json(search.search(
+                        conn, q.get("q", ""), _filters(multi), q.get("sort", "relevance"),
+                        int(q.get("page", 1)), min(int(q.get("per_page", 20)), 100), q.get("mode", "any")))
+                finally:
+                    conn.close()
+            if path == "/api/codes":
+                return self._json({"codes": {c: v[0] for c, v in doccodes.CODES.items()}, "groups": doccodes.GROUPS})
+            if path in ("/api/doc", "/api/doc/docx", "/api/doc/pdf"):
+                conn = db.connect(store.db_path)
+                search.ensure_schema(conn)
+                try:
+                    doc = search.get_document(conn, q.get("id", ""))
+                finally:
+                    conn.close()
+                if doc is None:
+                    raise lookup.NotFound("document not found")
+                if path == "/api/doc":
+                    doc.pop("pdf_path", None)
+                    return self._json(doc)
+                if path == "/api/doc/docx":
+                    title = f"{doc['doc_desc'] or doc['doc_code']} - {doc['app_no'] or ''} ({doc['mail_date'] or ''})"
+                    return self._send(200, textextract.to_docx(title, doc["text"] or ""),
+                                      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                      {"Content-Disposition": f'attachment; filename="{doc["doc_id"]}.docx"'})
+                return self._pdf(service.document_pdf(doc["app_no"] or "", doc["doc_id"]), f"{doc['doc_id']}.pdf")
+            if path == "/api/lookup":
+                return self._json(service.lookup(q.get("type", "app"), q.get("q", "")))
+            if path == "/api/file/pdf":
+                return self._pdf(service.document_pdf(q.get("app", ""), q.get("doc", "")), f"{q.get('doc')}.pdf")
+            if path == "/api/patent/pdf":
+                n = q.get("n", "")
+                return self._pdf(service.patent_pdf(q.get("type", "pat"), n), f"{n}.pdf")
+            if path == "/api/patent/text":
+                return self._json(service.patent_text(q.get("type", "pat"), q.get("n", "")))
             if path == "/examiner":
                 return self._page("examiner.html")
             if path == "/artunit":
@@ -177,10 +235,11 @@ def make_handler(store: Store):
     return Handler
 
 
-def serve(db_path: str, host: str = "127.0.0.1", port: int = 8000, as_of: date | None = None) -> None:
+def serve(db_path: str, host: str = "127.0.0.1", port: int = 8000, as_of: date | None = None,
+          data_dir: str = "data") -> None:
     store = Store(db_path, as_of)
-    httpd = ThreadingHTTPServer((host, port), make_handler(store))
-    print(f"Serving on http://{host}:{port}/examiner  (db: {db_path})")
+    httpd = ThreadingHTTPServer((host, port), make_handler(store, lookup.Service(db_path, data_dir)))
+    print(f"Serving on http://{host}:{port}/  (db: {db_path})")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

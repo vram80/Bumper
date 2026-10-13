@@ -128,7 +128,52 @@ through:
 * the USPTO Patent Examination Research Dataset (PatEx), an economics-office
   research extract.
 
-## 7. Open questions
+## 7. Document search page (`/pairptab`) and lookup page (`/patpubapp`)
+
+The site root sends anonymous visitors to the login page. For signed-in users
+the main tools are these two pages.
+
+**Document search (`/pairptab`)**: full-text search over prosecution documents.
+* Three collections: a random sample of ex parte file-wrapper documents
+  (office actions, responses, appeal papers, decisions); PTAB trial documents
+  (IPR, PGR, CBM); and a private collection of one firm's own files.
+* Patent and publication text is not part of the searchable set.
+* Query syntax: OR, required (+), NOT (-), phrases, proximity, fuzzy matching,
+  grouping, partial words and field-scoped queries.
+* Sort by relevance or by date. Advanced search filters by document code
+  (grouped by type), customer number and art unit, and takes several values
+  separated by `|`.
+* Facet filters: document type, examiner, customer number, correspondent,
+  art unit, signer and authorizing practitioner, and the previous and next
+  outgoing actions and incoming filings around each document.
+* Each result can be viewed as metadata, text, a Word file or the PDF.
+* Endpoints: `/PairPtab/Lookup`, `/PairPtab/SearchIfwFiles`, `/PairPtab/GetIndexInfo`, `/PairPtab/GetLinkToBlob`.
+
+**Lookup (`/patpubapp`)**: enter a patent, publication or application number
+to get its bibliographic data, file history, assignments and PDFs. Fields
+include application number and type, art unit, attorney docket, US class,
+customer number, earliest publication, entity status, examiner, filing and
+issue dates, inventors, patent number, status, title and AIA flag, along with
+the transaction list. Endpoints: `/PatPubApp/GetPtoPdf`,
+`/PatPubApp/GetPatOrPubText`, `/PatPubApp/pairfetch`, `/PatPubApp/assignmentfetch`.
+
+**How Bumper covers these**
+
+| Feature | Bumper |
+| --- | --- |
+| Full-text document search, syntax, facets, sort | `bumper/search.py` (SQLite FTS5), page `/search` |
+| Previous and next action filters | `search.trace_actions`, from each application's full document list |
+| Ex parte collection (random sample) | `bumper docs fetch --sample N` |
+| PTAB trial collection | `bumper docs ptab <query>` |
+| Private firm collection | `bumper docs files <dir> --kb firm` |
+| Text, Word and PDF views | `/api/doc`, `/api/doc/docx`, `/api/doc/pdf` |
+| Lookup by patent, publication or application number | `bumper/lookup.py`, page `/lookup` |
+| Patent and publication PDFs | USPTO public PDF service, with EPO OPS as the backup |
+| Patent and publication text | USPTO weekly full-text XML (`bumper fulltext load`), then PDF text or OCR |
+| Assignments | ODP assignment endpoint |
+| Patent family (new) | EPO OPS INPADOC family |
+
+## 8. Open questions
 
 * Whether the time metrics are means or medians. The site does not say; Bumper
   uses means.
@@ -136,6 +181,9 @@ through:
   Bumper uses 5 (`MIN_DISPOSALS`).
 * How the "art unit" peer group is chosen when an examiner has worked in more
   than one unit. Bumper uses the unit holding most of the examiner's applications.
+* The exact USPTO document and transaction-code mappings. The ODP document, assignment and
+  PTAB endpoints and field names in `bumper/uspto.py`, `bumper/lookup.py` and `bumper/docindex.py`
+  need checking against live responses once an API key is configured.
 * The exact transaction-code mapping. Bumper's mapping in `bumper/events.py`
   matches on code first and falls back to description text. It should be checked
   against live ODP data once an API key is configured.

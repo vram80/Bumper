@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Patent Lookup</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header><span class="brand">Bumper</span><a href="/search">Search</a><a href="/lookup">Lookup</a><a href="/examiner">Examiners</a><a href="/artunit">Art Units</a></header>
+<main>
+  <form class="search" id="form"><input id="q" placeholder="Patent, publication or application number" autocomplete="off" autofocus></form>
+  <div class="radios">
+    <label><input type="radio" name="type" value="pat" checked> Patent number</label>
+    <label><input type="radio" name="type" value="pub"> Publication number</label>
+    <label><input type="radio" name="type" value="app"> Application number</label>
+  </div>
+  <div id="out"><div class="empty">Enter a number to see bibliographic data, file history, documents, assignments and family.</div></div>
+</main>
+<div id="viewer"></div>
+<script src="/static/common.js"></script>
+<script src="/static/lookup.js"></script>
+</body>
+</html>
