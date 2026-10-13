@@ -80,9 +80,22 @@ class LookupTests(unittest.TestCase):
     def test_normalize(self):
         self.assertEqual(lookup.normalize("pat", "US 10,000,000 B2"), "10000000")
         self.assertEqual(lookup.normalize("pat", "RE049,123"), "RE49123")
-        self.assertEqual(lookup.normalize("pub", "US 2020/0123456 A1"), "20200123456")
+        self.assertEqual(lookup.normalize("pub", "US 2020/0123456 A1"), "20200123456A1")
+        self.assertEqual(lookup.normalize("pub", "US20180177098P1"), "20180177098P1")
         self.assertEqual(lookup.normalize("pub", "2020/123456"), "20200123456")
         self.assertEqual(lookup.normalize("app", "16/123,456"), "16123456")
+
+    def test_normalize_matches_uspto_forms(self):
+        # Forms confirmed against the live USPTO services: no zero padding.
+        cases = {("pat", "07123456"): "7123456", ("pat", "D0912345"): "D912345", ("pat", "RE045678"): "RE45678",
+                 ("pat", "US PP30,000 P3"): "PP30000", ("pat", "US 10,000,000 B2"): "10000000",
+                 ("pub", "US20200085571A2"): "20200085571A2", ("pub", "2020/085571"): "20200085571",
+                 ("app", "9/785,112"): "09785112"}
+        for (kind, raw), want in cases.items():
+            self.assertEqual(lookup.normalize(kind, raw), want, raw)
+        for kind, raw in [("pat", "abc"), ("pat", "0"), ("pub", "12345"), ("app", "1612")]:
+            with self.assertRaises(ValueError):
+                lookup.normalize(kind, raw)
 
     def test_biblio(self):
         b = lookup.biblio_from_record(RECORD)

@@ -25,27 +25,57 @@ class NotFound(LookupError):
     pass
 
 
+# Number formats the USPTO's current services accept, confirmed against the
+# live ODP API and the public PDF service (2026-10): patent numbers without
+# zero padding (7123456, D912345, RE45678, PP30000); publications as the full
+# document number with kind code (US20200085571A1); applications as 8 digits.
+PATENT_PREFIXES = ("RE", "PP", "D", "H", "T", "X", "AI")
+PUB_KIND_CODES = ("A1", "A2", "A9", "P1", "P4", "P9")  # A: utility, P: plant
+
+
 def normalize(kind: str, number: str) -> str:
-    """Canonical number for a lookup type ('app', 'pat' or 'pub')."""
-    s = number.strip().upper()
+    """Canonical number for a lookup type ('app', 'pat' or 'pub').
+
+    Raises ValueError with a readable message when the input is not a number of
+    that type, so a bad entry never reaches the USPTO as a failed lookup.
+    """
+    raw = number.strip().upper()
+    s = re.sub(r"[\s,/.\-]", "", raw)
     if kind == "app":
         s = re.sub(r"^US", "", s)
-        return re.sub(r"[^0-9]", "", s) if not re.match(r"^PCT", s) else s.replace(" ", "")
+        if re.fullmatch(r"PCT[A-Z]{2}\d{2,4}\d+", s):
+            return s
+        if re.fullmatch(r"\d{7,8}", s):
+            return s.zfill(8)
+        raise ValueError(f"{number!r} is not an application number (e.g. 16/123,456 or 16123456)")
     if kind == "pat":
-        s = re.sub(r"^US", "", s).replace(" ", "")
-        s = re.sub(r"(B\d|E|S|P\d?)$", "", s)
-        s = re.sub(r"[^0-9A-Z]", "", s)
-        prefix = re.match(r"^(RE|PP|D|H|T)", s)
-        return (prefix.group(1) + s[len(prefix.group(1)):].lstrip("0")) if prefix else s.lstrip("0")
+        s = re.sub(r"^US", "", s)
+        s = re.sub(r"(B[12]|E1?|S1?|P[23]?|H1?)$", "", s) if re.search(r"\d(B[12]|E1?|S1?|P[23]?|H1?)$", s) else s
+        prefix = next((p for p in PATENT_PREFIXES if s.startswith(p) and s[len(p):].isdigit()), "")
+        digits = s[len(prefix):]
+        if not digits.isdigit() or not digits.strip("0"):
+            raise ValueError(f"{number!r} is not a patent number (e.g. 10,000,000, D912,345, RE45,678 or PP30,000)")
+        digits = digits.lstrip("0")
+        if len(digits) > (8 if not prefix else 7):
+            raise ValueError(f"{number!r} has too many digits for a patent number")
+        return prefix + digits
     if kind == "pub":
-        s = re.sub(r"^US", "", s).replace(" ", "")
-        s = re.sub(r"A\d$", "", s)
-        digits = re.sub(r"[^0-9]", "", s)
-        # 2020/123456 (old 6-digit serial form) -> 20200123456
-        if len(digits) == 10:
-            digits = digits[:4] + "0" + digits[4:]
-        return digits
+        s = re.sub(r"^US", "", s)
+        kind_code = ""
+        m = re.fullmatch(r"(\d+)([AP]\d)", s)
+        if m:
+            s, kind_code = m.group(1), m.group(2)
+        if re.fullmatch(r"\d{10}", s):  # 2020123456 typed without the padding zero
+            s = s[:4] + "0" + s[4:]
+        if not re.fullmatch(r"(19|20)\d{9}", s):
+            raise ValueError(f"{number!r} is not a publication number (e.g. US 2020/0123456 A1 or 20200123456)")
+        return s + kind_code
     raise ValueError(f"unknown lookup type {kind!r}")
+
+
+def pub_digits(number: str) -> str:
+    """The 11-digit publication number without a kind code."""
+    return re.sub(r"[AP]\d$", "", number)
 
 
 def _pick(d: dict, *keys: str, default: Any = None) -> Any:
@@ -187,17 +217,25 @@ class Service:
                 row = conn.execute("SELECT app_no FROM applications WHERE patent_number = ?", (n,)).fetchone()
                 if row:
                     return row[0]
-            row = conn.execute("SELECT app_no FROM patent_text WHERE number = ?", (n,)).fetchone()
+            row = conn.execute("SELECT app_no FROM patent_text WHERE number = ?",
+                               (n if kind == "pat" else pub_digits(n),)).fetchone()
             if row and row[0]:
                 return row[0]
             client = self._client()
             if client is None:
                 raise NotFound(f"{n} is not in the local database and USPTO_API_KEY is not set")
-            field = "patentNumber" if kind == "pat" else "earliestPublicationNumber"
-            value = n if kind == "pat" else f"US{n}A1"
-            rec = self._cached(conn, f"find:{field}:{value}", lambda: client.find_raw(field, value))
-            if not rec and kind == "pub":
-                rec = self._cached(conn, f"find:{field}:US{n}", lambda: client.find_raw(field, f"US{n}"))
+            if kind == "pat":
+                candidates = [("patentNumber", n)]
+            else:
+                # ODP stores the full number with kind code; try the one given, else the usual codes.
+                codes = [n[-2:]] if re.search(r"[AP]\d$", n) else list(PUB_KIND_CODES)
+                candidates = [("earliestPublicationNumber", f"US{pub_digits(n)}{c}") for c in codes]
+            rec = None
+            for field, value in candidates:
+                rec = self._cached(conn, f"find:{field}:{value}",
+                                   lambda f=field, v=value: client.find_raw(f, v))
+                if rec:
+                    break
             if not rec:
                 raise NotFound(f"no application found for {kind} {n}")
             return rec["applicationNumberText"]
@@ -230,7 +268,7 @@ class Service:
             b = result["biblio"]
             result["links"] = {
                 "patent_pdf": f"/api/patent/pdf?type=pat&n={b['patent_number']}" if b.get("patent_number") else None,
-                "publication_pdf": (f"/api/patent/pdf?type=pub&n={normalize('pub', b['earliest_publication_number'])}"
+                "publication_pdf": (f"/api/patent/pdf?type=pub&n={pub_digits(normalize('pub', b['earliest_publication_number']))}"
                                     if b.get("earliest_publication_number") else None),
             }
             result["family"] = self._family(conn, b, result["warnings"])
@@ -282,6 +320,7 @@ class Service:
 
     def patent_pdf(self, kind: str, number: str) -> bytes:
         n = normalize(kind, number)
+        n = pub_digits(n) if kind == "pub" else n
         path = self.data_dir / "patents" / f"{n}.pdf"
         if path.exists():
             return path.read_bytes()
@@ -298,6 +337,7 @@ class Service:
 
     def patent_text(self, kind: str, number: str) -> dict:
         n = normalize(kind, number)
+        n = pub_digits(n) if kind == "pub" else n
         conn = self._conn()
         try:
             hit = fulltext.get(conn, n)
