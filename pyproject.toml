@@ -1,0 +1,15 @@
+[project]
+name = "bumper"
+version = "0.1.0"
+description = "Patent examiner statistics computed from public USPTO file-wrapper data"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+bumper = "bumper.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["bumper*"]
+
+[tool.setuptools.package-data]
+bumper = ["static/*"]

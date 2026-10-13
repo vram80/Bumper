@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Examiner Statistics</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<header><span class="brand">Bumper</span><a href="/examiner">Examiners</a><a href="/artunit">Art Units</a></header>
+<main>
+  <div class="search"><input id="q" placeholder="Examiner name — LASTNAME, FIRSTNAME M" autocomplete="off" autofocus></div>
+  <div id="out"><div class="empty">Search for an examiner to see their statistics.</div></div>
+  <details>
+    <summary>How these numbers are computed</summary>
+    <p><b>Window.</b> Unless noted, figures use applications disposed of (allowed or abandoned) in the three years before the report date.</p>
+    <p><b>Allowance rate</b> = allowed ÷ (allowed + abandoned). Abandonments before examination are excluded; abandonments for an unpaid issue fee count as allowances.</p>
+    <p><b>Actions per allowance / abandonment</b>: non-final rejections, final rejections, restrictions, Ex parte Quayle actions and examiner's answers, averaged over allowed (or abandoned) applications.</p>
+    <p><b>Months to first action</b>: filing or 371(c) date to the first non-final rejection, final rejection or allowance. <b>Months to first allowance</b>: filing or 371(c) date to the first notice of allowance.</p>
+    <p><b>Rank</b> is the examiner's percentile for the raw value among peers with at least five dispositions (50% = median). Colour shows direction: red leans toward longer or harder prosecution, green toward shorter or easier.</p>
+    <p><b>After-final, AFCP, pre-appeal and appeal-brief outcomes</b> follow each filing to the next decisive event in the file history. <b>Interviews</b> report allowance rates among disposed applications that had at least one interview of each type.</p>
+  </details>
+</main>
+<script src="/static/common.js"></script>
+<script src="/static/examiner.js"></script>
+</body>
+</html>
